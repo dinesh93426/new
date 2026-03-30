@@ -47,6 +47,24 @@ export default function SymptomCheckerPage() {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
+  const resolvePreferredVoice = (synthesis: SpeechSynthesis) => {
+    const voices = synthesis.getVoices()
+    if (voices.length === 0) return null
+
+    const preferred = ["ta-IN", "ta", "en-IN", "en-US"]
+    for (const lang of preferred) {
+      const matched = voices.find((voice) => voice.lang.toLowerCase() === lang.toLowerCase())
+      if (matched) return matched
+    }
+
+    for (const lang of preferred) {
+      const matched = voices.find((voice) => voice.lang.toLowerCase().startsWith(lang.toLowerCase()))
+      if (matched) return matched
+    }
+
+    return voices[0] ?? null
+  }
+
   const { messages, sendMessage, status } = useChat({
     transport: new DefaultChatTransport({ api: "/api/analyze-symptoms" }),
     onError: (error) => {
@@ -221,12 +239,41 @@ export default function SymptomCheckerPage() {
         .map((p) => p.text)
         .join("") || ""
       
-      // Cancel previous speech if any
-      window.speechSynthesis.cancel()
-      
-      const utterance = new SpeechSynthesisUtterance(text)
-      utterance.lang = "ta-IN"
-      window.speechSynthesis.speak(utterance)
+      if (!text.trim()) return
+
+      const synthesis = window.speechSynthesis
+      synthesis.cancel()
+
+      const speak = () => {
+        const utterance = new SpeechSynthesisUtterance(text)
+        const preferredVoice = resolvePreferredVoice(synthesis)
+
+        if (preferredVoice) {
+          utterance.voice = preferredVoice
+          utterance.lang = preferredVoice.lang
+        } else {
+          // Fallback language for browsers where voice list is delayed/unavailable.
+          utterance.lang = "en-US"
+        }
+
+        synthesis.speak(utterance)
+      }
+
+      if (synthesis.getVoices().length > 0) {
+        speak()
+      } else {
+        // Some browsers load voices asynchronously after first interaction.
+        const handleVoicesChanged = () => {
+          synthesis.removeEventListener("voiceschanged", handleVoicesChanged)
+          speak()
+        }
+
+        synthesis.addEventListener("voiceschanged", handleVoicesChanged)
+        setTimeout(() => {
+          synthesis.removeEventListener("voiceschanged", handleVoicesChanged)
+          speak()
+        }, 300)
+      }
     }
   }, [messages, status])
 
