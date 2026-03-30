@@ -20,9 +20,17 @@ const quickSymptoms = [
 
 function getRiskLevel(text: string): "safe" | "warning" | "emergency" | null {
   const upperText = text.toUpperCase()
+  const normalizedTamil = text.replace(/\s+/g, "")
+
   if (upperText.includes("EMERGENCY")) return "emergency"
+  if (normalizedTamil.includes("அவசரம்")) return "emergency"
+
   if (upperText.includes("WARNING")) return "warning"
+  if (normalizedTamil.includes("எச்சரிக்கை")) return "warning"
+
   if (upperText.includes("SAFE")) return "safe"
+  if (normalizedTamil.includes("பாதுகாப்பு")) return "safe"
+
   return null
 }
 
