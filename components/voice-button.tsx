@@ -17,6 +17,18 @@ export function VoiceButton({ onTranscript, isProcessing = false, size = "defaul
   const [isSupported, setIsSupported] = useState(true)
   const recognitionRef = useRef<SpeechRecognition | null>(null)
 
+  const stopRecognition = () => {
+    if (!recognitionRef.current) return
+
+    try {
+      recognitionRef.current.abort()
+    } catch {
+      recognitionRef.current.stop()
+    }
+
+    setIsListening(false)
+  }
+
   useEffect(() => {
     if (typeof window !== "undefined") {
       const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition
@@ -46,14 +58,23 @@ export function VoiceButton({ onTranscript, isProcessing = false, size = "defaul
         setIsSupported(false)
       }
     }
+
+    return () => {
+      if (!recognitionRef.current) return
+
+      recognitionRef.current.onresult = null
+      recognitionRef.current.onerror = null
+      recognitionRef.current.onend = null
+      stopRecognition()
+      recognitionRef.current = null
+    }
   }, [onTranscript])
 
   const toggleListening = () => {
     if (!recognitionRef.current) return
 
     if (isListening) {
-      recognitionRef.current.stop()
-      setIsListening(false)
+      stopRecognition()
     } else {
       recognitionRef.current.start()
       setIsListening(true)

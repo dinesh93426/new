@@ -2,11 +2,12 @@ interface SpeechRecognition extends EventTarget {
   continuous: boolean;
   interimResults: boolean;
   lang: string;
-  onresult: (event: any) => void;
-  onerror: (event: any) => void;
-  onend: () => void;
+  onresult: ((event: any) => void) | null;
+  onerror: ((event: any) => void) | null;
+  onend: (() => void) | null;
   start: () => void;
   stop: () => void;
+  abort: () => void;
 }
 
 interface SpeechRecognitionEvent {

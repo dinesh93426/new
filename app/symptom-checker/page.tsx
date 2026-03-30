@@ -7,7 +7,7 @@ import { ArrowLeft, Send, Mic, MicOff, Loader2, AlertCircle, CheckCircle, AlertT
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { cn } from "@/lib/utils"
-import Link from "next/link"
+import { useRouter } from "next/navigation"
 
 const quickSymptoms = [
   { label: "Headache", labelTamil: "தலைவலி", icon: "🤕" },
@@ -27,12 +27,15 @@ function getRiskLevel(text: string): "safe" | "warning" | "emergency" | null {
 }
 
 export default function SymptomCheckerPage() {
+  const router = useRouter()
   const [inputValue, setInputValue] = useState("")
   const [isListening, setIsListening] = useState(false)
   const [speechSupported, setSpeechSupported] = useState(true)
   const recognitionRef = useRef<SpeechRecognition | null>(null)
   const audioContextRef = useRef<AudioContext | null>(null)
   const analyzerRef = useRef<AnalyserNode | null>(null)
+  const mediaStreamRef = useRef<MediaStream | null>(null)
+  const animationFrameRef = useRef<number | null>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
@@ -45,6 +48,52 @@ export default function SymptomCheckerPage() {
   })
 
   const isLoading = status === "streaming" || status === "submitted"
+
+  const stopVoiceSession = () => {
+    setIsListening(false)
+    window.speechSynthesis.cancel()
+
+    if (recognitionRef.current) {
+      try {
+        recognitionRef.current.abort()
+      } catch {
+        recognitionRef.current.stop()
+      }
+    }
+
+    if (animationFrameRef.current !== null) {
+      cancelAnimationFrame(animationFrameRef.current)
+      animationFrameRef.current = null
+    }
+
+    if (audioContextRef.current) {
+      audioContextRef.current.close().catch(() => {})
+      audioContextRef.current = null
+    }
+
+    if (mediaStreamRef.current) {
+      mediaStreamRef.current.getTracks().forEach((track) => track.stop())
+      mediaStreamRef.current = null
+    }
+
+    analyzerRef.current = null
+  }
+
+  const disposeRecognition = () => {
+    if (!recognitionRef.current) return
+
+    recognitionRef.current.onresult = null
+    recognitionRef.current.onerror = null
+    recognitionRef.current.onend = null
+
+    try {
+      recognitionRef.current.abort()
+    } catch {
+      recognitionRef.current.stop()
+    }
+
+    recognitionRef.current = null
+  }
 
   // Initialize speech recognition
   useEffect(() => {
@@ -73,6 +122,26 @@ export default function SymptomCheckerPage() {
         setSpeechSupported(false)
       }
     }
+
+    return () => {
+      stopVoiceSession()
+      disposeRecognition()
+    }
+  }, [])
+
+  // Stop voice immediately when browser-level navigation happens.
+  useEffect(() => {
+    const handleNavigationAway = () => {
+      stopVoiceSession()
+    }
+
+    window.addEventListener("popstate", handleNavigationAway)
+    window.addEventListener("pagehide", handleNavigationAway)
+
+    return () => {
+      window.removeEventListener("popstate", handleNavigationAway)
+      window.removeEventListener("pagehide", handleNavigationAway)
+    }
   }, [])
 
   // Voice Visualizer Effect
@@ -90,6 +159,7 @@ export default function SymptomCheckerPage() {
           
           audioContextRef.current = audioContext
           analyzerRef.current = analyzer
+          mediaStreamRef.current = stream
           
           const bufferLength = analyzer.frequencyBinCount
           const dataArray = new Uint8Array(bufferLength)
@@ -104,7 +174,7 @@ export default function SymptomCheckerPage() {
             const width = canvas.width
             const height = canvas.height
             
-            requestAnimationFrame(draw)
+            animationFrameRef.current = requestAnimationFrame(draw)
             analyzerRef.current.getByteFrequencyData(dataArray)
             
             ctx.clearRect(0, 0, width, height)
@@ -130,9 +200,7 @@ export default function SymptomCheckerPage() {
       
       startVisualizer()
     } else {
-      if (audioContextRef.current) {
-        audioContextRef.current.close()
-      }
+      stopVoiceSession()
     }
   }, [isListening])
 
@@ -162,12 +230,18 @@ export default function SymptomCheckerPage() {
   const toggleListening = () => {
     if (!recognitionRef.current) return
     if (isListening) {
-      recognitionRef.current.stop()
+      stopVoiceSession()
     } else {
       window.speechSynthesis.cancel() // Stop speaking if user starts talking
       recognitionRef.current.start()
       setIsListening(true)
     }
+  }
+
+  const handleBack = () => {
+    stopVoiceSession()
+    disposeRecognition()
+    router.push("/")
   }
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -188,10 +262,8 @@ export default function SymptomCheckerPage() {
       {/* Header */}
       <header className="sticky top-0 z-40 border-b border-border bg-card">
         <div className="mx-auto flex max-w-3xl items-center gap-3 px-4 py-3">
-          <Button variant="ghost" size="icon" asChild>
-            <Link href="/">
-              <ArrowLeft className="h-5 w-5" />
-            </Link>
+          <Button variant="ghost" size="icon" onClick={handleBack}>
+            <ArrowLeft className="h-5 w-5" />
           </Button>
           <div>
             <h1 className="font-semibold text-foreground">Symptom Checker</h1>
